@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Global Disaster Tracker | Centered Search</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        :root {
+            --bg-dark: #0f172a;
+            --panel-bg: #1e293b;
+            --card-bg: #27354f;
+            --accent: #38bdf8;
+            --danger: #f43f5e;
+            --tag-bg: #0ea5e9;
+            --text-main: #f1f5f9;
+            --text-muted: #94a3b8;
+            --glass: rgba(15, 23, 42, 0.95);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', Inter, sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            height: 100vh;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* --- 1. SIDEBAR --- */
+        .sidebar {
+            width: 400px;
+            background: var(--panel-bg);
+            border-right: 1px solid rgba(255,255,255,0.05);
+            display: flex;
+            flex-direction: column;
+            z-index: 2000;
+            box-shadow: 4px 0 15px rgba(0,0,0,0.3);
+        }
+
+        .sidebar-header {
+            padding: 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .header-controls i { margin-left: 15px; color: var(--text-muted); cursor: pointer; transition: 0.2s; }
+        .header-controls i:hover { color: var(--accent); }
+
+        .dash-search-box { padding: 1rem 1.5rem; position: relative; }
+        .dash-input {
+            width: 100%;
+            padding: 12px 12px 12px 40px;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            color: white;
+            outline: none;
+            transition: 0.2s;
+        }
+        .dash-input:focus { border-color: var(--accent); }
+        .dash-icon { position: absolute; left: 35px; top: 50%; transform: translateY(-50%); color: var(--text-muted); }
+
+        .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 0 1.5rem 1rem 1.5rem; }
+        .stat-card { background: var(--card-bg); padding: 10px; border-radius: 8px; text-align: center; }
+        .stat-val { display: block; font-size: 1.5rem; font-weight: bold; color: var(--accent); }
+        .stat-lbl { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; }
+
+        .list-container { flex: 1; overflow-y: auto; padding: 0 1.5rem 1rem 1.5rem; }
+        .list-container::-webkit-scrollbar { width: 6px; }
+        .list-container::-webkit-scrollbar-thumb { background-color: #64748b; border-radius: 4px; }
+
+        .event-card {
+            background: var(--card-bg);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            border: 1px solid transparent;
+            transition: 0.2s;
+        }
+        .event-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+        .tag { display: inline-block; padding: 2px 8px; font-size: 0.7rem; border-radius: 4px; background: var(--tag-bg); margin-top: 5px; }
+
+        /* --- 2. MAP AREA --- */
+        #map { flex: 1; z-index: 1; position: relative; }
+
+        /* --- CENTER CONTROLS (Search Engine) --- */
+        .center-controls {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 3000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 400px; /* Wider for center search */
+        }
+
+        .live-search-bar {
+            width: 100%;
+            background: white;
+            border-radius: 24px;
+            display: flex;
+            align-items: center;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            padding: 4px;
+            pointer-events: auto;
+        }
+        
+        .ls-btn { background: none; border: none; padding: 10px 15px; cursor: pointer; color: #5f6368; font-size: 1.1rem; }
+        .ls-input { flex: 1; border: none; outline: none; font-size: 1rem; color: #333; padding: 8px 0; }
+        .ls-dir { border-left: 1px solid #ddd; color: #1a73e8; }
+
+        .ls-results {
+            width: 100%;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            margin-top: 5px;
+            display: none;
+            color: #333;
+            max-height: 400px;
+            overflow-y: auto;
+            text-align: left;
+        }
+        .ls-item { padding: 12px 15px; cursor: pointer; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #eee; }
+        .ls-item:hover { background: #f8fafc; }
+        .ls-text { font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+        /* --- RIGHT CONTROLS (Layer Switcher) --- */
+        .right-controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+
+        .layer-dock {
+            background: var(--glass);
+            backdrop-filter: blur(10px);
+            padding: 8px;
+            border-radius: 16px;
+            display: flex;
+            gap: 10px;
+            border: 1px solid rgba(255,255,255,0.1);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            pointer-events: auto;
+        }
+        
+        .layer-opt { display: flex; flex-direction: column; align-items: center; cursor: pointer; opacity: 0.7; width: 60px; transition: 0.2s; }
+        .layer-opt:hover, .layer-opt.active { opacity: 1; transform: scale(1.05); }
+        
+        .layer-img { 
+            width: 48px; height: 48px; 
+            border-radius: 12px; 
+            border: 2px solid rgba(255,255,255,0.2); 
+            background-size: cover; 
+            margin-bottom: 4px; 
+            transition: 0.2s;
+        }
+        .layer-opt.active .layer-img { border-color: var(--accent); box-shadow: 0 0 10px rgba(56, 189, 248, 0.5); }
+        .layer-txt { font-size: 0.7rem; font-weight: 500; color: white; text-shadow: 0 1px 2px rgba(0,0,0,0.8); }
+
+        .p-streets { background: linear-gradient(135deg, #e2e8f0, #f8fafc); }
+        .p-hybrid { background: linear-gradient(135deg, #14532d, #166534); }
+        .p-dark { background: linear-gradient(135deg, #0f172a, #334155); }
+
+    </style>
+</head>
+<body>
+
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <h2>Dashboard</h2>
+            <div class="header-controls">
+                <i class="fas fa-cog"></i>
+                <i class="fas fa-user-circle"></i>
+            </div>
+        </div>
+        <div class="dash-search-box">
+            <i class="fas fa-filter dash-icon"></i>
+            <input type="text" id="dash-filter" class="dash-input" placeholder="Filter alerts...">
+        </div>
+        <div class="stats-grid">
+            <div class="stat-card">
+                <span class="stat-val" id="stat-total">0</span>
+                <span class="stat-lbl">Active Events</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-val" id="stat-fire">0</span>
+                <span class="stat-lbl">Wildfires</span>
+            </div>
+        </div>
+        <div class="list-container" id="events-list">
+            <div style="text-align:center; padding:20px; color:#64748b;"><i class="fas fa-spinner fa-spin"></i> Loading...</div>
+        </div>
+    </aside>
+
+    <div id="map">
+        
+        <div class="center-controls">
+            <div class="live-search-bar">
+                <button class="ls-btn"><i class="fas fa-bars"></i></button>
+                <input type="text" id="live-search" class="ls-input" placeholder="Search Google Maps">
+                <button class="ls-btn"><i class="fas fa-search"></i></button>
+                <button class="ls-btn ls-dir"><i class="fas fa-directions"></i></button>
+            </div>
+            <div class="ls-results" id="ls-results"></div>
+        </div>
+
+        <div class="right-controls">
+            <div class="layer-dock">
+                <div class="layer-opt active" onclick="setLayer('streets', this)">
+                    <div class="layer-img p-streets" style="background-image: url('https://a.tile.openstreetmap.org/0/0/0.png');"></div>
+                    <span class="layer-txt">Streets</span>
+                </div>
+                <div class="layer-opt" onclick="setLayer('hybrid', this)">
+                    <div class="layer-img p-hybrid" style="background-image: url('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/0/0/0');"></div>
+                    <span class="layer-txt">Satellite</span>
+                </div>
+                <div class="layer-opt" onclick="setLayer('dark', this)">
+                    <div class="layer-img p-dark" style="background-image: url('https://a.basemaps.cartocdn.com/dark_all/0/0/0.png');"></div>
+                    <span class="layer-txt">Dark</span>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // Map Setup
+        const layers = {
+            streets: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '©OSM' }),
+            hybrid: L.layerGroup([
+                L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'),
+                L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}')
+            ]),
+            dark: L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png')
+        };
+
+        const map = L.map('map', { zoomControl: false }).setView([20, 0], 2);
+        let currentLayer = layers.streets;
+        map.addLayer(currentLayer);
+        L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+        let markerGroup = L.layerGroup().addTo(map);
+        let allData = [];
+
+        async function init() {
+            try {
+                const res = await fetch('https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=100');
+                const data = await res.json();
+                allData = data.events;
+                renderDashboard(allData);
+            } catch (e) { console.error("Error", e); }
+        }
+
+        function renderDashboard(events) {
+            const list = document.getElementById('events-list');
+            list.innerHTML = '';
+            markerGroup.clearLayers();
+
+            document.getElementById('stat-total').innerText = events.length;
+            document.getElementById('stat-fire').innerText = events.filter(e => e.categories[0].title === 'Wildfires').length;
+
+            events.forEach(ev => {
+                const [lng, lat] = ev.geometry[0].coordinates;
+                const isFire = ev.categories[0].title === 'Wildfires';
+                const color = isFire ? '#f43f5e' : '#38bdf8';
+
+                const marker = L.circleMarker([lat, lng], { radius: 6, color: color, fillOpacity: 0.9, weight: 1 }).addTo(markerGroup);
+                marker.bindPopup(`<b>${ev.title}</b><br>${ev.categories[0].title}`);
+                
+                // Allow marker click to zoom
+                marker.on('click', (e) => { 
+                    map.flyTo(e.latlng, 10); 
+                    L.DomEvent.stopPropagation(e); 
+                });
+
+                const card = document.createElement('div');
+                card.className = 'event-card';
+                card.innerHTML = `<div style="font-weight:600; margin-bottom:4px;">${ev.title}</div><span class="tag" style="background:${color}">${ev.categories[0].title}</span>`;
+                card.onclick = () => { map.flyTo([lat, lng], 10); marker.openPopup(); };
+                list.appendChild(card);
+            });
+        }
+
+        // Live Search
+        const liveInput = document.getElementById('live-search');
+        const liveResults = document.getElementById('ls-results');
+        let debounceTimer;
+
+        liveInput.addEventListener('input', (e) => {
+            clearTimeout(debounceTimer);
+            const query = e.target.value;
+            if (query.length < 3) { liveResults.style.display = 'none'; return; }
+
+            debounceTimer = setTimeout(async () => {
+                try {
+                    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${query}`);
+                    const results = await res.json();
+                    liveResults.innerHTML = '';
+                    if (results.length > 0) {
+                        liveResults.style.display = 'block';
+                        results.forEach(place => {
+                            const row = document.createElement('div');
+                            row.className = 'ls-item';
+                            row.innerHTML = `<i class="fas fa-map-marker-alt" style="color:#ef4444;"></i> <div class="ls-text">${place.display_name}</div>`;
+                            row.onclick = () => {
+                                map.flyTo([parseFloat(place.lat), parseFloat(place.lon)], 10);
+                                liveInput.value = place.display_name;
+                                liveResults.style.display = 'none';
+                            };
+                            liveResults.appendChild(row);
+                        });
+                    } else { liveResults.style.display = 'none'; }
+                } catch(err) {}
+            }, 300);
+        });
+
+        // Click on map closes search results, BUT DOES NOT ZOOM
+        map.on('click', function(e) {
+            liveResults.style.display = 'none';
+            // Zoom logic removed as per request
+        });
+
+        window.setLayer = function(type, el) {
+            map.removeLayer(currentLayer);
+            currentLayer = layers[type];
+            map.addLayer(currentLayer);
+            document.querySelectorAll('.layer-opt').forEach(b => b.classList.remove('active'));
+            el.classList.add('active');
+        }
+
+        document.getElementById('dash-filter').addEventListener('input', (e) => {
+            const term = e.target.value.toLowerCase();
+            renderDashboard(allData.filter(ev => ev.title.toLowerCase().includes(term)));
+        });
+
+        init();
+    </script>
+</body>
+</html>
